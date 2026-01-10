@@ -13,7 +13,12 @@ import Products from "./pages/Products";
 import Customers from "./pages/Customers";
 import Reports from "./pages/Reports";
 import Settings from "./pages/Settings";
-import { Purchases, Expenses, Stock, GSTReports, Staff, BusinessProfile } from "./pages/PlaceholderPages";
+import Purchases from "./pages/Purchases";
+import Expenses from "./pages/Expenses";
+import Stock from "./pages/Stock";
+import GSTReports from "./pages/GSTReports";
+import Staff from "./pages/Staff";
+import { BusinessProfile } from "./pages/PlaceholderPages";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
