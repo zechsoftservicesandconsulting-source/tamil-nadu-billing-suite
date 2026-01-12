@@ -2,6 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Customization support */
+.compact-mode {
+  --spacing-multiplier: 0.75;
+}
+
+.no-animations * {
+  animation: none !important;
+  transition: none !important;
+}
+
 /* Universal Billing Software - Tamil Nadu
    Professional POS Design System */
 

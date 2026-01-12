@@ -15,6 +15,10 @@ import {
   BusinessProfile,
   BillItem
 } from '@/data/mockData';
+import {
+  CustomizationSettings,
+  defaultCustomizationSettings,
+} from '@/data/customizationDefaults';
 
 type Language = 'en' | 'ta';
 type Theme = 'light' | 'dark';
@@ -80,6 +84,14 @@ interface AppContextType {
   setSelectedCustomer: (customer: Customer | null) => void;
   billDiscount: number;
   setBillDiscount: (discount: number) => void;
+
+  // Customization
+  customization: CustomizationSettings;
+  updateCustomization: <K extends keyof CustomizationSettings>(
+    section: K,
+    updates: Partial<CustomizationSettings[K]>
+  ) => void;
+  resetCustomization: (section?: keyof CustomizationSettings) => void;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -106,9 +118,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [billDiscount, setBillDiscount] = useState(0);
 
+  // Customization State
+  const [customization, setCustomization] = useState<CustomizationSettings>(defaultCustomizationSettings);
+
   // Auth Functions
   const login = useCallback((email: string, password: string) => {
-    // Mock login - accept any credentials
     const user = staff.find(s => s.email === email) || staff[0];
     setCurrentUser(user);
     setIsAuthenticated(true);
@@ -116,7 +130,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [staff]);
 
   const demoLogin = useCallback(() => {
-    setCurrentUser(staff[0]); // Login as owner
+    setCurrentUser(staff[0]);
     setIsAuthenticated(true);
   }, [staff]);
 
@@ -136,6 +150,43 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   React.useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
   }, [theme]);
+
+  // Apply appearance customization
+  React.useEffect(() => {
+    const root = document.documentElement;
+    
+    // Apply font size
+    const fontSizeMap = {
+      small: '14px',
+      medium: '16px',
+      large: '18px',
+      xlarge: '20px',
+    };
+    root.style.setProperty('--base-font-size', fontSizeMap[customization.appearance.fontSize]);
+    
+    // Apply border radius
+    const borderRadiusMap = {
+      none: '0px',
+      small: '4px',
+      medium: '8px',
+      large: '16px',
+    };
+    root.style.setProperty('--custom-radius', borderRadiusMap[customization.appearance.borderRadius]);
+    
+    // Apply compact mode
+    if (customization.appearance.compactMode) {
+      root.classList.add('compact-mode');
+    } else {
+      root.classList.remove('compact-mode');
+    }
+    
+    // Apply animations toggle
+    if (!customization.appearance.showAnimations) {
+      root.classList.add('no-animations');
+    } else {
+      root.classList.remove('no-animations');
+    }
+  }, [customization.appearance]);
 
   // Business Profile
   const updateBusinessProfile = useCallback((profile: Partial<BusinessProfile>) => {
@@ -245,6 +296,28 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setExpenses(prev => [expense, ...prev]);
   }, []);
 
+  // Customization Functions
+  const updateCustomization = useCallback(<K extends keyof CustomizationSettings>(
+    section: K,
+    updates: Partial<CustomizationSettings[K]>
+  ) => {
+    setCustomization(prev => ({
+      ...prev,
+      [section]: { ...prev[section], ...updates }
+    }));
+  }, []);
+
+  const resetCustomization = useCallback((section?: keyof CustomizationSettings) => {
+    if (section) {
+      setCustomization(prev => ({
+        ...prev,
+        [section]: defaultCustomizationSettings[section]
+      }));
+    } else {
+      setCustomization(defaultCustomizationSettings);
+    }
+  }, []);
+
   const value: AppContextType = {
     isAuthenticated,
     currentUser,
@@ -281,6 +354,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setSelectedCustomer,
     billDiscount,
     setBillDiscount,
+    customization,
+    updateCustomization,
+    resetCustomization,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
