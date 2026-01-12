@@ -92,7 +92,7 @@ export function AppSidebar() {
   };
 
   return (
-    <Sidebar className="border-r-0 bg-primary">
+    <Sidebar className="border-r-0 bg-primary !w-full !min-w-0">
       <SidebarHeader className="p-4">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-accent text-accent-foreground font-bold text-lg">
