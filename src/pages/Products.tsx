@@ -22,8 +22,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { useApp } from '@/contexts/AppContext';
+import { useCustomization } from '@/hooks/useCustomization';
 import { formatCurrency } from '@/utils/formatters';
-import { productCategories, Product } from '@/data/mockData';
+import { Product } from '@/data/mockData';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { toast } from 'sonner';
 
@@ -44,6 +45,14 @@ const initialProductState: Partial<Product> = {
 
 export default function Products() {
   const { language, products, addProduct, updateProduct, deleteProduct } = useApp();
+  const { 
+    customization,
+    enabledProductCategories, 
+    enabledUnits, 
+    gstRates 
+  } = useCustomization();
+  
+  const productFields = customization.productFields;
   
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -51,16 +60,19 @@ export default function Products() {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [formData, setFormData] = useState<Partial<Product>>(initialProductState);
 
+  // Filter products based on enabled categories
   const filteredProducts = useMemo(() => {
+    const enabledCatIds = enabledProductCategories.map(c => c.id);
     return products.filter(product => {
       const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                            product.nameTamil.includes(searchQuery) ||
                            product.barcode.includes(searchQuery);
-      const matchesCategory = selectedCategory === 'all' || 
-                             product.category.toLowerCase().replace(' ', '-') === selectedCategory;
-      return matchesSearch && matchesCategory;
+      const productCatId = product.category.toLowerCase().replace(' ', '-');
+      const matchesCategory = selectedCategory === 'all' || productCatId === selectedCategory;
+      const categoryEnabled = enabledCatIds.includes(productCatId);
+      return matchesSearch && matchesCategory && categoryEnabled;
     });
-  }, [products, searchQuery, selectedCategory]);
+  }, [products, searchQuery, selectedCategory, enabledProductCategories]);
 
   const stats = useMemo(() => ({
     total: products.length,
@@ -147,7 +159,8 @@ export default function Products() {
                 </DialogTitle>
               </DialogHeader>
               <div className="grid gap-4 py-4">
-                <div className="grid grid-cols-2 gap-4">
+                {/* Product Name - Always shown */}
+                <div className={productFields.showTamilName ? "grid grid-cols-2 gap-4" : ""}>
                   <div className="space-y-2">
                     <Label>{language === 'ta' ? 'பொருள் பெயர்*' : 'Product Name*'}</Label>
                     <Input
@@ -156,17 +169,20 @@ export default function Products() {
                       placeholder="Rice (1kg)"
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label>{language === 'ta' ? 'தமிழ் பெயர்' : 'Tamil Name'}</Label>
-                    <Input
-                      value={formData.nameTamil || ''}
-                      onChange={(e) => setFormData({ ...formData, nameTamil: e.target.value })}
-                      placeholder="அரிசி (1கிலோ)"
-                    />
-                  </div>
+                  {productFields.showTamilName && (
+                    <div className="space-y-2">
+                      <Label>{language === 'ta' ? 'தமிழ் பெயர்' : 'Tamil Name'}</Label>
+                      <Input
+                        value={formData.nameTamil || ''}
+                        onChange={(e) => setFormData({ ...formData, nameTamil: e.target.value })}
+                        placeholder="அரிசி (1கிலோ)"
+                      />
+                    </div>
+                  )}
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                {/* Category & HSN Code */}
+                <div className={productFields.showHsnCode ? "grid grid-cols-2 gap-4" : ""}>
                   <div className="space-y-2">
                     <Label>{language === 'ta' ? 'வகை' : 'Category'}</Label>
                     <Select 
@@ -177,7 +193,7 @@ export default function Products() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {productCategories.map((cat) => (
+                        {enabledProductCategories.map((cat) => (
                           <SelectItem key={cat.id} value={cat.name}>
                             {cat.icon} {language === 'ta' ? cat.nameTamil : cat.name}
                           </SelectItem>
@@ -185,16 +201,19 @@ export default function Products() {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-2">
-                    <Label>HSN Code</Label>
-                    <Input
-                      value={formData.hsnCode || ''}
-                      onChange={(e) => setFormData({ ...formData, hsnCode: e.target.value })}
-                      placeholder="1006"
-                    />
-                  </div>
+                  {productFields.showHsnCode && (
+                    <div className="space-y-2">
+                      <Label>HSN Code</Label>
+                      <Input
+                        value={formData.hsnCode || ''}
+                        onChange={(e) => setFormData({ ...formData, hsnCode: e.target.value })}
+                        placeholder="1006"
+                      />
+                    </div>
+                  )}
                 </div>
 
+                {/* Price, MRP, GST */}
                 <div className="grid grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <Label>{language === 'ta' ? 'விற்பனை விலை*' : 'Selling Price*'}</Label>
@@ -205,83 +224,98 @@ export default function Products() {
                       placeholder="120"
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label>MRP</Label>
-                    <Input
-                      type="number"
-                      value={formData.mrp || ''}
-                      onChange={(e) => setFormData({ ...formData, mrp: parseFloat(e.target.value) })}
-                      placeholder="140"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label>GST %</Label>
-                    <Select 
-                      value={String(formData.gstPercent)}
-                      onValueChange={(value) => setFormData({ ...formData, gstPercent: parseInt(value) })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="0">0%</SelectItem>
-                        <SelectItem value="5">5%</SelectItem>
-                        <SelectItem value="12">12%</SelectItem>
-                        <SelectItem value="18">18%</SelectItem>
-                        <SelectItem value="28">28%</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  {productFields.showMrp && (
+                    <div className="space-y-2">
+                      <Label>MRP</Label>
+                      <Input
+                        type="number"
+                        value={formData.mrp || ''}
+                        onChange={(e) => setFormData({ ...formData, mrp: parseFloat(e.target.value) })}
+                        placeholder="140"
+                      />
+                    </div>
+                  )}
+                  {productFields.showGst && (
+                    <div className="space-y-2">
+                      <Label>GST %</Label>
+                      <Select 
+                        value={String(formData.gstPercent)}
+                        onValueChange={(value) => setFormData({ ...formData, gstPercent: parseInt(value) })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {gstRates.map((rate) => (
+                            <SelectItem key={rate} value={String(rate)}>{rate}%</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
                 </div>
 
-                <div className="grid grid-cols-3 gap-4">
+                {/* Stock, Unit, Low Stock Threshold */}
+                {(productFields.showStock || productFields.showUnit || productFields.showLowStockThreshold) && (
+                  <div className="grid grid-cols-3 gap-4">
+                    {productFields.showStock && (
+                      <div className="space-y-2">
+                        <Label>{language === 'ta' ? 'இருப்பு' : 'Stock'}</Label>
+                        <Input
+                          type="number"
+                          value={formData.stock || ''}
+                          onChange={(e) => setFormData({ ...formData, stock: parseInt(e.target.value) })}
+                          placeholder="100"
+                        />
+                      </div>
+                    )}
+                    {productFields.showUnit && (
+                      <div className="space-y-2">
+                        <Label>{language === 'ta' ? 'அலகு' : 'Unit'}</Label>
+                        <Select 
+                          value={formData.unit}
+                          onValueChange={(value) => setFormData({ ...formData, unit: value })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {enabledUnits.map((unit) => (
+                              <SelectItem key={unit.id} value={unit.symbol}>
+                                {language === 'ta' ? unit.nameTamil : unit.name} ({unit.symbol})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
+                    {productFields.showLowStockThreshold && (
+                      <div className="space-y-2">
+                        <Label>{language === 'ta' ? 'குறைந்த இருப்பு' : 'Low Stock'}</Label>
+                        <Input
+                          type="number"
+                          value={formData.lowStockThreshold || ''}
+                          onChange={(e) => setFormData({ ...formData, lowStockThreshold: parseInt(e.target.value) })}
+                          placeholder="10"
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Barcode */}
+                {productFields.showBarcode && (
                   <div className="space-y-2">
-                    <Label>{language === 'ta' ? 'இருப்பு' : 'Stock'}</Label>
+                    <Label>{language === 'ta' ? 'பார்கோடு' : 'Barcode'}</Label>
                     <Input
-                      type="number"
-                      value={formData.stock || ''}
-                      onChange={(e) => setFormData({ ...formData, stock: parseInt(e.target.value) })}
-                      placeholder="100"
+                      value={formData.barcode || ''}
+                      onChange={(e) => setFormData({ ...formData, barcode: e.target.value })}
+                      placeholder="8901234567890"
                     />
                   </div>
-                  <div className="space-y-2">
-                    <Label>{language === 'ta' ? 'அலகு' : 'Unit'}</Label>
-                    <Select 
-                      value={formData.unit}
-                      onValueChange={(value) => setFormData({ ...formData, unit: value })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="pcs">Pieces</SelectItem>
-                        <SelectItem value="kg">Kilogram</SelectItem>
-                        <SelectItem value="g">Gram</SelectItem>
-                        <SelectItem value="L">Litre</SelectItem>
-                        <SelectItem value="ml">Millilitre</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>{language === 'ta' ? 'குறைந்த இருப்பு' : 'Low Stock'}</Label>
-                    <Input
-                      type="number"
-                      value={formData.lowStockThreshold || ''}
-                      onChange={(e) => setFormData({ ...formData, lowStockThreshold: parseInt(e.target.value) })}
-                      placeholder="10"
-                    />
-                  </div>
-                </div>
+                )}
 
-                <div className="space-y-2">
-                  <Label>{language === 'ta' ? 'பார்கோடு' : 'Barcode'}</Label>
-                  <Input
-                    value={formData.barcode || ''}
-                    onChange={(e) => setFormData({ ...formData, barcode: e.target.value })}
-                    placeholder="8901234567890"
-                  />
-                </div>
-
+                {/* Active Toggle */}
                 <div className="flex items-center justify-between">
                   <Label>{language === 'ta' ? 'செயலில்' : 'Active'}</Label>
                   <Switch
@@ -377,7 +411,7 @@ export default function Products() {
               <SelectItem value="all">
                 {language === 'ta' ? 'அனைத்தும்' : 'All Categories'}
               </SelectItem>
-              {productCategories.map((cat) => (
+              {enabledProductCategories.map((cat) => (
                 <SelectItem key={cat.id} value={cat.id}>
                   {cat.icon} {language === 'ta' ? cat.nameTamil : cat.name}
                 </SelectItem>
