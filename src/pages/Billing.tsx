@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Search, 
@@ -7,8 +7,6 @@ import {
   Trash2, 
   User, 
   CreditCard, 
-  Banknote, 
-  Smartphone,
   X,
   Percent,
   Receipt,
@@ -23,8 +21,8 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useApp } from '@/contexts/AppContext';
+import { useCustomization } from '@/hooks/useCustomization';
 import { formatCurrency, generateBillNumber, roundOff } from '@/utils/formatters';
-import { paymentModes, productCategories } from '@/data/mockData';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -49,14 +47,34 @@ export default function Billing() {
     businessProfile
   } = useApp();
 
+  const { 
+    customization,
+    enabledPaymentModes, 
+    defaultPaymentMode,
+    enabledProductCategories,
+    enableGst,
+    enableDiscount,
+    enableRoundOff,
+    showStock
+  } = useCustomization();
+
+  const quickQuantities = customization.billing.quickQuantities;
+
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [showPayment, setShowPayment] = useState(false);
   const [showCustomerSelect, setShowCustomerSelect] = useState(false);
-  const [selectedPaymentMode, setSelectedPaymentMode] = useState('cash');
+  const [selectedPaymentMode, setSelectedPaymentMode] = useState(defaultPaymentMode?.id || 'cash');
   const [discountInput, setDiscountInput] = useState('');
   const [showDiscount, setShowDiscount] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
+
+  // Update default payment mode when it changes
+  useEffect(() => {
+    if (defaultPaymentMode) {
+      setSelectedPaymentMode(defaultPaymentMode.id);
+    }
+  }, [defaultPaymentMode]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -78,22 +96,27 @@ export default function Billing() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [cart]);
 
-  // Filter products
+  // Filter products based on enabled categories
   const filteredProducts = useMemo(() => {
+    const enabledCatIds = enabledProductCategories.map(c => c.id);
     return products.filter(product => {
       const matchesSearch = product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
                            product.nameTamil.includes(searchQuery) ||
                            product.barcode.includes(searchQuery);
-      const matchesCategory = !selectedCategory || 
-                             product.category.toLowerCase().replace(' ', '-') === selectedCategory;
-      return matchesSearch && matchesCategory && product.isActive;
+      const productCatId = product.category.toLowerCase().replace(' ', '-');
+      const matchesCategory = !selectedCategory || productCatId === selectedCategory;
+      const categoryEnabled = enabledCatIds.includes(productCatId);
+      return matchesSearch && matchesCategory && product.isActive && categoryEnabled;
     });
-  }, [products, searchQuery, selectedCategory]);
+  }, [products, searchQuery, selectedCategory, enabledProductCategories]);
 
-  // Cart calculations
+  // Cart calculations with GST toggle
   const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-  const totalGst = cartGst.cgst + cartGst.sgst;
-  const { rounded: finalTotal, roundOff: roundOffAmount } = roundOff(subtotal + totalGst - billDiscount);
+  const totalGst = enableGst ? (cartGst.cgst + cartGst.sgst) : 0;
+  const discountAmount = enableDiscount ? billDiscount : 0;
+  const { rounded: finalTotal, roundOff: roundOffAmount } = enableRoundOff 
+    ? roundOff(subtotal + totalGst - discountAmount)
+    : { rounded: subtotal + totalGst - discountAmount, roundOff: 0 };
 
   const handleApplyDiscount = () => {
     const discount = parseFloat(discountInput) || 0;
@@ -113,9 +136,9 @@ export default function Billing() {
       customerName: selectedCustomer?.name || 'Walk-in Customer',
       items: cart,
       subtotal,
-      cgst: cartGst.cgst,
-      sgst: cartGst.sgst,
-      discount: billDiscount,
+      cgst: enableGst ? cartGst.cgst : 0,
+      sgst: enableGst ? cartGst.sgst : 0,
+      discount: discountAmount,
       roundOff: roundOffAmount,
       total: finalTotal,
       paymentMode: selectedPaymentMode,
@@ -133,8 +156,6 @@ export default function Billing() {
       setSelectedCustomer(null);
     }, 2000);
   };
-
-  const quickQuantities = [1, 2, 5, 10];
 
   return (
     <AppLayout>
@@ -164,7 +185,7 @@ export default function Billing() {
                 >
                   {language === 'ta' ? 'அனைத்தும்' : 'All'}
                 </Button>
-                {productCategories.map((cat) => (
+                {enabledProductCategories.map((cat) => (
                   <Button
                     key={cat.id}
                     variant={selectedCategory === cat.id ? 'default' : 'outline'}
@@ -203,7 +224,7 @@ export default function Billing() {
                       <p className="text-lg font-bold font-mono text-primary mt-1">
                         {formatCurrency(product.price)}
                       </p>
-                      {product.stock < product.lowStockThreshold && (
+                      {showStock && product.stock < product.lowStockThreshold && (
                         <span className="text-xs text-warning">Stock: {product.stock}</span>
                       )}
                     </CardContent>
@@ -366,21 +387,25 @@ export default function Billing() {
                   </span>
                   <span className="font-mono">{formatCurrency(subtotal)}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">CGST</span>
-                  <span className="font-mono">{formatCurrency(cartGst.cgst)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">SGST</span>
-                  <span className="font-mono">{formatCurrency(cartGst.sgst)}</span>
-                </div>
-                {billDiscount > 0 && (
+                {enableGst && (
+                  <>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">CGST</span>
+                      <span className="font-mono">{formatCurrency(cartGst.cgst)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">SGST</span>
+                      <span className="font-mono">{formatCurrency(cartGst.sgst)}</span>
+                    </div>
+                  </>
+                )}
+                {enableDiscount && discountAmount > 0 && (
                   <div className="flex justify-between text-success">
                     <span>{language === 'ta' ? 'தள்ளுபடி' : 'Discount'}</span>
-                    <span className="font-mono">-{formatCurrency(billDiscount)}</span>
+                    <span className="font-mono">-{formatCurrency(discountAmount)}</span>
                   </div>
                 )}
-                {roundOffAmount !== 0 && (
+                {enableRoundOff && roundOffAmount !== 0 && (
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">
                       {language === 'ta' ? 'ரவுண்ட் ஆஃப்' : 'Round Off'}
@@ -402,14 +427,15 @@ export default function Billing() {
               </div>
 
               {/* Action Buttons */}
-              <div className="grid grid-cols-2 gap-2">
-                <Dialog open={showDiscount} onOpenChange={setShowDiscount}>
-                  <DialogTrigger asChild>
-                    <Button variant="outline" className="gap-2">
-                      <Percent className="h-4 w-4" />
-                      {language === 'ta' ? 'தள்ளுபடி' : 'Discount'}
-                    </Button>
-                  </DialogTrigger>
+              <div className={cn("grid gap-2", enableDiscount ? "grid-cols-2" : "grid-cols-1")}>
+                {enableDiscount && (
+                  <Dialog open={showDiscount} onOpenChange={setShowDiscount}>
+                    <DialogTrigger asChild>
+                      <Button variant="outline" className="gap-2">
+                        <Percent className="h-4 w-4" />
+                        {language === 'ta' ? 'தள்ளுபடி' : 'Discount'}
+                      </Button>
+                    </DialogTrigger>
                   <DialogContent className="sm:max-w-sm">
                     <DialogHeader>
                       <DialogTitle>
@@ -435,8 +461,9 @@ export default function Billing() {
                     </div>
                   </DialogContent>
                 </Dialog>
+                )}
 
-                <Button 
+                <Button
                   onClick={() => setShowPayment(true)}
                   className="gap-2 bg-success hover:bg-success/90 text-success-foreground"
                 >
@@ -471,18 +498,30 @@ export default function Billing() {
                 <Label>
                   {language === 'ta' ? 'பணம் செலுத்தும் முறை' : 'Payment Method'}
                 </Label>
-                <div className="grid grid-cols-2 gap-3">
-                  {paymentModes.slice(0, 4).map((mode) => (
+                <div className={cn(
+                  "grid gap-3",
+                  enabledPaymentModes.length <= 2 ? "grid-cols-2" : 
+                  enabledPaymentModes.length <= 4 ? "grid-cols-2" : "grid-cols-3"
+                )}>
+                  {enabledPaymentModes.map((mode) => (
                     <Button
                       key={mode.id}
                       variant={selectedPaymentMode === mode.id ? 'default' : 'outline'}
-                      className="h-16 flex-col gap-1"
+                      className={cn(
+                        "flex-col gap-1",
+                        enabledPaymentModes.length <= 2 ? "h-20" : "h-16"
+                      )}
                       onClick={() => setSelectedPaymentMode(mode.id)}
                     >
                       <span className="text-xl">{mode.icon}</span>
                       <span className="text-sm">
                         {language === 'ta' ? mode.nameTamil : mode.name}
                       </span>
+                      {mode.isDefault && (
+                        <span className="text-[10px] text-muted-foreground">
+                          ({language === 'ta' ? 'இயல்பு' : 'Default'})
+                        </span>
+                      )}
                     </Button>
                   ))}
                 </div>
